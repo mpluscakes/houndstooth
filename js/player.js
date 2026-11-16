@@ -1,7 +1,8 @@
 // The player's formation of houndstooth ships. The formation IS the health:
 // each hit chews one ship away; lose the last one and it's game over.
-import { CFG, SLOTS } from './config.js';
-import { view, drawGlow } from './gfx.js';
+import { CFG, SLOTS, MUZZLES } from './config.js';
+import { F } from './field.js';
+import { drawGlow } from './gfx.js';
 import { TOOTH, TOOTH_ORIGIN } from './sprites.js';
 import { input } from './input.js';
 import { audio } from './audio.js';
@@ -13,11 +14,12 @@ export class Player {
   constructor(game) { this.game = game; this.reset(); }
 
   reset(count = 1) {
-    this.x = view.W / 2;
-    this.y = view.H - CFG.PLAYER_BOTTOM - view.safeBottom;
+    F.layout();
+    const start = F.pt(F.front * 0.55, F.reachR * 0.22);
+    this.x = start.x; this.y = start.y;
     this.alive = true;
     this.invuln = 0;
-    this.fireT = 0.4;
+    this.fireT = 0.3;
     this.volley = 0;
     this.ships = [];
     for (let i = 0; i < Math.min(count, CFG.MAX_SHIPS); i++) {
@@ -34,14 +36,11 @@ export class Player {
   }
 
   update(dt) {
-    if (!this.alive) { input.takeDrag(); return; }
-    this.y = view.H - CFG.PLAYER_BOTTOM - view.safeBottom;
-    this.x += input.takeDrag() * CFG.DRAG_GAIN + (input.right - input.left) * CFG.KEY_SPEED * dt;
-
-    // Keep the whole formation on screen.
-    let lo = 0, hi = 0;
-    for (const s of this.ships) { lo = Math.min(lo, SLOTS[s.slot][0]); hi = Math.max(hi, SLOTS[s.slot][0]); }
-    this.x = clamp(this.x, 8 - lo * CFG.TILE, view.W - 12 - hi * CFG.TILE);
+    const drag = input.takeDrag();
+    if (!this.alive) return;
+    this.x += drag.x * CFG.DRAG_GAIN + (input.right - input.left) * CFG.KEY_SPEED * dt;
+    this.y += drag.y * CFG.DRAG_GAIN + (input.down - input.up) * CFG.KEY_SPEED * dt;
+    this.confine();
 
     this.invuln = Math.max(0, this.invuln - dt);
 
@@ -60,17 +59,39 @@ export class Player {
       }
     }
 
-    // Auto-fire: the lead ship fires every volley, wingmen every other one.
-    this.fireT -= dt;
-    if (this.fireT <= 0) {
-      this.fireT += CFG.FIRE_INTERVAL;
+    // Fire only while the screen is touched. Shots alternate between the two
+    // prongs of each tooth; the lead fires every volley, wingmen every other.
+    this.fireT = Math.max(0, this.fireT - dt);
+    if (input.firing && this.fireT <= 0) {
+      this.fireT = CFG.FIRE_INTERVAL;
       this.volley++;
       this.ships.forEach((s, i) => {
         if (!s.locked) return;
-        if (i === 0 || (i + this.volley) % 2 === 0) this.game.bullets.push({ x: s.x + 2, y: s.y - 10 });
+        if (i !== 0 && (i + this.volley) % 2) return;
+        const m = MUZZLES[(this.volley + (i >> 1)) % 2];
+        this.game.bullets.push({ x: s.x + m[0], y: s.y + m[1] });
       });
-      audio.sfx.shoot();
+      if (this.volley % 2) audio.sfx.shoot();
     }
+  }
+
+  // Keep the whole formation on the playfield, and the leader behind the
+  // front line (a diagonal across the field, square to the firing axis).
+  confine() {
+    let loX = 0, hiX = 0, hiY = 0;
+    for (const s of this.ships) {
+      const [sx, sy] = SLOTS[s.slot];
+      loX = Math.min(loX, sx); hiX = Math.max(hiX, sx); hiY = Math.max(hiY, sy);
+    }
+    const T = CFG.TILE;
+    const x0 = 8 - loX * T, x1 = F.W - 13 - hiX * T, y0 = F.top + 12, y1 = F.bottom - 10 - hiY * T;
+    for (let i = 0; i < 4; i++) {
+      this.x = clamp(this.x, x0, x1); this.y = clamp(this.y, y0, y1);
+      const over = F.u(this.x, this.y) - F.front;
+      if (over <= 0) break;
+      this.x -= over * F.dx; this.y -= over * F.dy;
+    }
+    this.x = clamp(this.x, x0, x1); this.y = clamp(this.y, y0, y1);
   }
 
   // A caught pickup becomes a new ship that flies to the next free slot.

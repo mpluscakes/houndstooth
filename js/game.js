@@ -4,6 +4,7 @@ import { CFG, difficulty } from './config.js';
 import { view, drawText, drawGlow } from './gfx.js';
 import { buildSprites, TOOTH_ORIGIN } from './sprites.js';
 import { input } from './input.js';
+import { F } from './field.js';
 import { audio } from './audio.js';
 import { fx } from './fx.js';
 import { Player } from './player.js';
@@ -25,7 +26,8 @@ export class Game {
     this.newHi = false;
     this.level = 1;
     this.diff = difficulty(1);
-    this.grid = { cols: 8, rows: 3 };
+    F.layout();
+    this.setGrid(8, 3);
     this.enemies = []; this.bullets = []; this.ebullets = []; this.pickups = [];
     this.boss = null;
     this.banner = null;
@@ -77,8 +79,8 @@ export class Game {
       audio.stopMusic();
       audio.sfx.warning();
     } else {
-      this.phaseT = 1.7;
-      this.showBanner('LEVEL ' + n, '', 1.7, '#ffffff');
+      this.phaseT = 1.2;
+      this.showBanner('LEVEL ' + n, '', 1.2, '#ffffff');
       audio.playMusic('main');
     }
   }
@@ -91,7 +93,7 @@ export class Game {
     const glow = due && !p.full;
     if (glow) this.wavesSinceGlow = 0;
     buildWave(this, this.progress++, glow);
-    this.diveT = 3;
+    this.diveT = 2;
     this.phase = 'wave';
   }
 
@@ -109,7 +111,7 @@ export class Game {
       case 'wave':
         this.runDives(dt);
         if (!this.enemies.length) {
-          this.phase = 'gap'; this.phaseT = 0.9;
+          this.phase = 'gap'; this.phaseT = 0.6;
           if (this.wave < CFG.WAVES_PER_LEVEL) audio.sfx.waveClear();
         }
         break;
@@ -170,13 +172,25 @@ export class Game {
 
   // --- Helpers used by entities ----------------------------------------------
 
-  gridPos(col, row) {
-    const g = this.grid, W = view.W;
-    const amp = Math.max(0, (W - g.cols * CFG.GRID_DX) / 2 - 2);
-    return {
-      x: W / 2 + (col - (g.cols - 1) / 2) * CFG.GRID_DX + Math.sin(this.time * 0.9) * amp,
-      y: view.safeTop + CFG.GRID_TOP + row * CFG.GRID_DY + Math.sin(this.time * 1.7 + col * 0.6) * 1.5,
+  // The moth grid is tilted with the field: columns are firing lanes, rows
+  // run across them. It sits as far up the axis as the screen allows, in the
+  // lanes the player can actually reach.
+  setGrid(cols, rows) {
+    const span = (CFG.GRID_COLS - 1) * CFG.GRID_DV, sway = CFG.GRID_SWAY;
+    const vL = F.reachL + sway + 2;
+    this.grid = {
+      cols, rows,
+      vMid: vL + span / 2,
+      uFar: Math.min(F.exitU(vL - sway), F.exitU(vL + span + sway)) - 13,
     };
+  }
+
+  gridPos(col, row) {
+    const g = this.grid;
+    return F.pt(
+      g.uFar - row * CFG.GRID_DU + Math.sin(this.time * 1.7 + col * 0.6) * 1.5,
+      g.vMid + (col - (g.cols - 1) / 2) * CFG.GRID_DV + Math.sin(this.time * 0.9) * CFG.GRID_SWAY,
+    );
   }
 
   enemyShot(x, y, angle, speed) {
@@ -184,7 +198,9 @@ export class Game {
   }
 
   dropPickup(x, y) {
-    this.pickups.push({ x0: Math.max(16, Math.min(view.W - 16, x)), x, y, t: 0 });
+    // Teeth drift down the axis, easing into a lane the player can reach.
+    const lane = F.v(x, y);
+    this.pickups.push({ x, y, t: 0, u: F.u(x, y), lane, goal: Math.max(F.reachL + 24, Math.min(F.reachR - 30, lane)) });
     fx.blast(x, y, '#ffe95a', 26, 0.4);
     audio.sfx.drop();
   }
@@ -236,10 +252,17 @@ export class Game {
   }
 
   update(dt) {
+    F.layout();
+    this.setGrid(this.grid.cols, this.grid.rows);
     this.handleInput();
     if (this.paused) return;
     this.time += dt;
-    for (const s of this.stars) { s.y += (s.sp * dt) / view.H; if (s.y > 1) { s.y -= 1; s.x = Math.random(); } }
+    for (const s of this.stars) {
+      // Stars streak down the axis, so the whole field reads as tilted.
+      s.x -= (F.dx * s.sp * dt) / view.W; s.y -= (F.dy * s.sp * dt) / view.H;
+      if (s.x < 0) { s.x += 1; s.y = Math.random(); }
+      if (s.y > 1) { s.y -= 1; s.x = Math.random(); }
+    }
     if (fx.hitstop > 0) { fx.hitstop -= dt; return; }
     fx.update(dt);
     if (this.banner && (this.banner.t -= dt) <= 0) this.banner = null;
@@ -254,23 +277,26 @@ export class Game {
   }
 
   updateWorld(dt) {
-    const { W, H } = view, p = this.player;
+    const p = this.player;
     p.update(dt);
     if (this.state === 'playing') this.director(dt);
 
-    for (const b of this.bullets) { b.y -= CFG.BULLET_SPEED * dt; if (b.y < -8) b.dead = true; }
+    const bs = CFG.BULLET_SPEED * dt;
+    for (const b of this.bullets) { b.x += F.dx * bs; b.y += F.dy * bs; if (F.outside(b.x, b.y, 6)) b.dead = true; }
     for (const b of this.ebullets) {
       b.x += b.vx * dt; b.y += b.vy * dt;
-      if (b.y > H + 6 || b.y < -6 || b.x < -6 || b.x > W + 6) b.dead = true;
+      if (F.outside(b.x, b.y, 6)) b.dead = true;
     }
     for (const e of this.enemies) e.update(dt);
     if (this.boss) this.boss.update(dt);
     for (const k of this.pickups) {
       k.t += dt;
-      k.y += CFG.PICKUP_FALL * dt;
-      k.x = k.x0 + Math.sin(k.t * 2.2) * 9;
-      if (k.y > H + 14) k.dead = true;
-      if (Math.random() < dt * 10) fx.spark(k.x + (Math.random() - 0.5) * 12, k.y - 6, 0, -14, 0.5, '#ffe95a');
+      k.u -= CFG.PICKUP_FALL * dt;
+      k.lane += (k.goal - k.lane) * Math.min(1, dt * 1.3);
+      const v = k.lane + Math.sin(k.t * 2.2) * 8;
+      k.x = F.x(k.u, v); k.y = F.y(k.u, v);
+      if (k.t > 1 && F.outside(k.x, k.y, 14)) k.dead = true;
+      if (Math.random() < dt * 10) fx.spark(k.x + (Math.random() - 0.5) * 12, k.y, F.dx * 14, F.dy * 14, 0.5, '#ffe95a');
     }
 
     if (this.state === 'playing') this.collide();
@@ -344,7 +370,11 @@ export class Game {
     if (this.state === 'title') {
       this.drawTitle(ctx);
     } else {
-      for (const s of this.stars) { ctx.fillStyle = s.c; ctx.fillRect((s.x * W) | 0, (s.y * H) | 0, 1, 1); }
+      for (const s of this.stars) {
+        const x = (s.x * W) | 0, y = (s.y * H) | 0;
+        ctx.fillStyle = s.c; ctx.fillRect(x, y, 1, 1);
+        if (s.sp > 22) { ctx.fillRect(x, y - 1, 1, 1); ctx.fillRect(x + 1, y - 3, 1, 2); } // fast ones leave a tail
+      }
 
       ctx.save();
       const [sx, sy] = fx.shakeOffset();
@@ -358,9 +388,11 @@ export class Game {
       if (this.boss) this.boss.draw(ctx, S, t);
 
       for (const b of this.bullets) {
-        const x = Math.round(b.x) - 1, y = Math.round(b.y);
-        ctx.fillStyle = '#777'; ctx.fillRect(x, y + 4, 2, 3);
-        ctx.fillStyle = '#fff'; ctx.fillRect(x, y, 2, 5);
+        // A short streak of blocks laid along the firing axis.
+        for (let i = 2; i >= 0; i--) {
+          ctx.fillStyle = i === 2 ? '#777' : '#fff';
+          ctx.fillRect(Math.round(b.x - F.dx * i * 2.24) - 1, Math.round(b.y - F.dy * i * 2.24) - 1, 2, 2);
+        }
       }
       this.player.draw(ctx, S, t);
       for (const b of this.ebullets) {
@@ -373,6 +405,7 @@ export class Game {
       fx.draw(ctx);
       ctx.restore();
 
+      this.drawThumbZone(ctx);
       this.drawHud(ctx);
     }
 
@@ -413,11 +446,28 @@ export class Game {
 
     const b = this.banner;
     if (b && this.state === 'playing') {
-      const y = Math.round(H * 0.4);
+      const y = Math.round(F.top + (F.bottom - F.top) * 0.42);
       if (b.color !== '#ff4060' || ((this.time * 5) | 0) % 2) {
         drawText(ctx, b.title, W / 2, y, { scale: 3, align: 'center', color: b.color, shadow: '#222' });
       }
       if (b.sub) drawText(ctx, b.sub, W / 2, y + 22, { align: 'center', color: '#ccc' });
+    }
+  }
+
+  // The strip at the bottom is kept clear of the action so a thumb resting
+  // there never hides anything. It is upholstered, naturally.
+  drawThumbZone(ctx) {
+    const { W, H } = view, y = F.bottom;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, y, W, H - y); ctx.clip();
+    ctx.fillStyle = '#000'; ctx.fillRect(0, y, W, H - y);
+    this.drawCloth(ctx, 0.75);
+    ctx.restore();
+    ctx.fillStyle = '#444'; ctx.fillRect(0, y, W, 1);
+    if (this.state === 'playing' && !this.paused && !input.firing && ((this.time * 2.5) | 0) % 2) {
+      const ty = Math.round(y + (F.dead - view.safeBottom) / 2 - 3);
+      ctx.fillStyle = '#000'; ctx.fillRect(W / 2 - 34, ty - 4, 68, 13);
+      drawText(ctx, 'HOLD TO FIRE', W / 2, ty, { align: 'center' });
     }
   }
 
@@ -442,22 +492,27 @@ export class Game {
     drawText(ctx, 'HOUNDSTOOTH', W / 2, ty, { scale: 3, align: 'center', shadow: '#555' });
     drawText(ctx, 'A MOTH-EATEN SHOOTER', W / 2, ty + 24, { align: 'center', color: '#ff5fa2' });
 
-    // A little diorama: moths over a three-ship formation.
+    // A little diorama: a three-ship wedge firing up the diagonal at moths.
     const cy = Math.round(H * 0.47);
-    ctx.fillStyle = '#000'; ctx.fillRect(W / 2 - 48, cy - 38, 96, 76);
-    [[-28, 1], [0, 'glow'], [28, 2]].forEach(([dx, type], i) => {
-      const mx = W / 2 + dx, my = cy - 20 + Math.sin(t * 2 + i * 2) * 3;
+    ctx.fillStyle = '#000'; ctx.fillRect(W / 2 - 48, cy - 48, 96, 96);
+    const sx = Math.round(W / 2 - 24), sy = cy + 20 + Math.round(Math.sin(t * 1.5) * 2);
+    [[-1, 1], [0, 'glow'], [1, 2]].forEach(([k, type], i) => {
+      const bob = Math.sin(t * 2 + i * 2) * 2;
+      const mx = sx + F.dx * (56 + bob) + F.nx * k * 19, my = sy + F.dy * (56 + bob) + F.ny * k * 19;
       if (type === 'glow') drawGlow(ctx, mx, my, 15 + Math.sin(t * 8) * 4, '#ffe95a', 0.9);
       ctx.drawImage(S.moth[type][((t * 5 + i) | 0) % 2], Math.round(mx) - 7, Math.round(my) - 6);
     });
-    const sy = cy + 20 + Math.round(Math.sin(t * 1.5) * 2);
-    for (const dx of [-16, 0, 16]) ctx.drawImage(S.tooth, W / 2 + dx - TOOTH_ORIGIN.x, sy - TOOTH_ORIGIN.y);
-    ctx.fillStyle = '#ff3b3b'; ctx.fillRect(W / 2 - 1, sy - 1, 2, 2);
+    for (let i = 0; i < 3; i++) {
+      const d = 14 + ((t * 60 + i * 13) % 39);
+      ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(sx + 3 + F.dx * d), Math.round(sy - 4 + F.dy * d), 2, 2);
+    }
+    for (const [dx, dy] of [[0, 0], [-16, 0], [0, 16]]) ctx.drawImage(S.tooth, sx + dx - TOOTH_ORIGIN.x, sy + dy - TOOTH_ORIGIN.y);
+    ctx.fillStyle = '#ff3b3b'; ctx.fillRect(sx - 1, sy - 1, 2, 2);
 
     const by = Math.round(H * 0.68);
     ctx.fillStyle = '#000'; ctx.fillRect(0, by - 8, W, 62);
     if (((t * 2.5) | 0) % 2) drawText(ctx, 'TAP TO START', W / 2, by, { scale: 2, align: 'center' });
-    drawText(ctx, 'DRAG TO MOVE - AUTO FIRE', W / 2, by + 20, { align: 'center', color: '#aaa' });
+    drawText(ctx, 'DRAG TO MOVE - HOLD TO FIRE', W / 2, by + 20, { align: 'center', color: '#aaa' });
     drawText(ctx, 'SHOOT THE GLOWING MOTH', W / 2, by + 30, { align: 'center', color: '#ffe95a' });
     drawText(ctx, 'CATCH THE TOOTH TO GROW', W / 2, by + 38, { align: 'center', color: '#ffe95a' });
     if (this.hi > 0) drawText(ctx, 'HIGH SCORE ' + this.hi, W / 2, H - 14 - view.safeBottom, { align: 'center', color: '#fff', shadow: '#000' });

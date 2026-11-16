@@ -1,6 +1,8 @@
-// Moths: fly in along a curve, sit in the grid, and dive at the player.
+// Moths: fly in from the top right along a curve, sit in the tilted grid,
+// and dive down the firing axis at the player.
 import { MOTH_TYPES } from './config.js';
-import { view, drawGlow } from './gfx.js';
+import { drawGlow } from './gfx.js';
+import { F } from './field.js';
 import { PAL } from './sprites.js';
 import { audio } from './audio.js';
 import { fx } from './fx.js';
@@ -39,16 +41,17 @@ export class Moth {
   slot() { return this.game.gridPos(this.col, this.row); }
 
   startDive() {
-    const g = this.game, p = g.player, { W, H } = view;
-    const side = this.x < W / 2 ? -1 : 1; // peel away outwards first
-    const tx = clamp(p.x, 12, W - 12);
+    const g = this.game, p = g.player;
+    const u = F.u(this.x, this.y), v = F.v(this.x, this.y);
+    const pu = F.u(p.x, p.y), pv = clamp(F.v(p.x, p.y), F.reachL, F.reachR);
+    const side = v < g.grid.vMid ? -1 : 1; // peel away outwards first
     this.d = [
       { x: this.x, y: this.y },
-      { x: this.x + side * 45, y: this.y - 32 },
-      { x: clamp(tx + side * 70, -10, W + 10), y: p.y - 100 },
-      { x: clamp(tx + (Math.random() - 0.5) * 36, 8, W - 8), y: H + 26 },
+      F.pt(u + 26, v + side * 40),
+      F.pt(pu + 95, pv + side * 62),
+      F.pt(-45, pv + (Math.random() - 0.5) * 36), // off the bottom-left
     ];
-    this.diveDur = 2.5 / (g.diff.speed * this.def.diveSpeed);
+    this.diveDur = 2.2 / (g.diff.speed * this.def.diveSpeed);
     this.shots = this.def.shooter || Math.random() < g.diff.shootChance ? (this.def.shooter ? 2 : 1) : 0;
     this.state = 'dive';
     this.t = 0;
@@ -82,10 +85,11 @@ export class Moth {
         const p = bez(this.d[0], this.d[1], this.d[2], this.d[3], Math.min(1, this.t));
         this.x = p.x; this.y = p.y;
         for (const mark of [0.32, 0.5]) {
-          if (this.shots > 0 && before < mark && this.t >= mark && this.y < g.player.y - 50 && g.player.alive) {
+          const ahead = F.u(this.x, this.y) - F.u(g.player.x, g.player.y);
+          if (this.shots > 0 && before < mark && this.t >= mark && ahead > 50 && g.player.alive) {
             this.shots--;
             const a = Math.atan2(g.player.y - this.y, g.player.x - this.x) + (Math.random() - 0.5) * 0.25;
-            g.enemyShot(this.x, this.y + 4, a, g.diff.bulletSpeed);
+            g.enemyShot(this.x, this.y, a, g.diff.bulletSpeed);
           }
         }
         if (this.t >= 1) {
@@ -95,9 +99,12 @@ export class Moth {
         break;
       }
       case 'return': {
-        this.t += dt / 1.1;
+        // Come back down its own lane from beyond the far edge.
+        this.t += dt / 1.0;
         const s = this.slot(), k = Math.min(1, this.t), e = 1 - (1 - k) * (1 - k);
-        this.x = s.x; this.y = -20 + (s.y + 20) * e;
+        const su = F.u(s.x, s.y), sv = F.v(s.x, s.y), from = F.exitU(sv) + 20;
+        const p = F.pt(from + (su - from) * e, sv);
+        this.x = p.x; this.y = p.y;
         if (this.t >= 1) this.state = 'grid';
         break;
       }
@@ -105,7 +112,7 @@ export class Moth {
 
     if (this.glow && Math.random() < dt * 14) {
       fx.spark(this.x + (Math.random() - 0.5) * 14, this.y + (Math.random() - 0.5) * 10,
-        0, 12, 0.5, Math.random() < 0.5 ? '#ffe95a' : '#ffffff', 1, 0);
+        -F.dx * 12, -F.dy * 12, 0.5, Math.random() < 0.5 ? '#ffe95a' : '#ffffff', 1, 0);
     }
   }
 

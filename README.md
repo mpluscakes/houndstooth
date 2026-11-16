@@ -1,16 +1,22 @@
 # Houndstooth
 
-A moth-eaten vertical space shooter for phone browsers. Plain HTML + Canvas +
+A moth-eaten diagonal space shooter for phone browsers. Plain HTML + Canvas +
 Web Audio, no build step, no dependencies, no asset files.
 
-- **Drag** anywhere to move. Firing is automatic.
+The whole playfield is tilted to match the tooth: ships fire up and to the
+right, and moths arrive from the top right and dive towards the bottom left.
+
+- **Drag** anywhere to move (sideways, and a limited way forward). The ship
+  **fires while you are touching** the screen. The cloth strip at the bottom
+  is empty on purpose: rest your thumb there.
 - **Shoot the glowing moth**, then **catch the tooth** it drops to add a ship.
   Ships lock together into a houndstooth tiling, and every ship fires.
 - **Your formation is your health.** Each hit chews one ship away; lose the
   last one and it's game over.
 - Three waves per level, and a **Moth Queen** every fourth level.
 
-Desktop: arrow keys / A-D to move, Space to start, M to mute, P to pause.
+Desktop: arrow keys / WASD to move, hold Space (or the mouse button) to fire,
+M to mute, P to pause.
 
 ## Run locally
 
@@ -32,9 +38,10 @@ On iPhone, use Share → "Add to Home Screen" for true full screen.
 
 | File | What lives there |
 | --- | --- |
-| `js/config.js` | All tuning numbers: speeds, fire rate, formation slots, moth stats, difficulty curve |
+| `js/config.js` | All tuning numbers: firing angle, speeds, fire rate, formation slots, moth stats, difficulty curve |
+| `js/field.js` | The tilted playfield: axis coordinates (along / across the line of fire), thumb zone, front line |
 | `js/waves.js` | Wave layouts and swooping entrance paths |
-| `js/enemies.js` | Moth behaviour (enter, grid, dive, return) |
+| `js/enemies.js` | Moth behaviour (enter, tilted grid, dive, return) |
 | `js/boss.js` | The Moth Queen and her attacks |
 | `js/player.js` | The ship formation: movement, firing, catching, getting hit |
 | `js/game.js` | State machine, level director, collisions, HUD and screens |

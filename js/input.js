@@ -1,15 +1,19 @@
 // Pointer + keyboard input. Dragging anywhere moves the ship (relative drag,
-// so your thumb never has to cover it). Taps are queued for menus/buttons.
+// so your thumb never has to cover it) and the ship fires for as long as the
+// screen is touched. Taps are queued for menus/buttons.
 import { view } from './gfx.js';
 import { audio } from './audio.js';
 
 export const input = {
-  left: 0, right: 0,
+  left: 0, right: 0, up: 0, down: 0,
+  held: false,       // a finger / mouse button is down
+  fireKey: 0,        // Space is down
   taps: [],          // [{x, y}] in logical pixels (x = -1 for keyboard "tap")
   keys: [],          // one-shot key presses: 'mute', 'pause'
-  _drag: 0, _id: null, _lastX: 0, _wantFullscreen: true,
+  _dx: 0, _dy: 0, _id: null, _lastX: 0, _lastY: 0, _wantFullscreen: true,
 
-  takeDrag() { const d = this._drag; this._drag = 0; return d; },
+  get firing() { return this.held || !!this.fireKey; },
+  takeDrag() { const d = { x: this._dx, y: this._dy }; this._dx = this._dy = 0; return d; },
 };
 
 function toLogical(e) {
@@ -37,7 +41,8 @@ export function initInput() {
     if (input._id !== null) return;
     const p = toLogical(e);
     input._id = e.pointerId;
-    input._lastX = p.x;
+    input.held = true;
+    input._lastX = p.x; input._lastY = p.y;
     input.taps.push(p);
     e.preventDefault();
   }, { passive: false });
@@ -45,17 +50,21 @@ export function initInput() {
   target.addEventListener('pointermove', e => {
     if (e.pointerId !== input._id) return;
     const p = toLogical(e);
-    input._drag += p.x - input._lastX;
-    input._lastX = p.x;
+    input._dx += p.x - input._lastX; input._dy += p.y - input._lastY;
+    input._lastX = p.x; input._lastY = p.y;
   });
 
   const end = e => {
     audio.unlock();
-    if (e.pointerId === input._id) input._id = null;
+    if (e.pointerId === input._id) { input._id = null; input.held = false; }
     if (e.type === 'pointerup') tryFullscreen(e);
   };
   target.addEventListener('pointerup', end);
   target.addEventListener('pointercancel', end);
+  target.addEventListener('blur', () => {
+    input._id = null; input.held = false; input.fireKey = 0;
+    input.left = input.right = input.up = input.down = 0;
+  });
   // iOS only treats some events as "user gestures" for audio; cover them all.
   for (const ev of ['touchend', 'click']) target.addEventListener(ev, () => audio.unlock());
   for (const ev of ['touchstart', 'touchmove', 'contextmenu', 'gesturestart', 'dblclick']) {
@@ -68,13 +77,21 @@ export function initInput() {
     switch (e.code) {
       case 'ArrowLeft': case 'KeyA': input.left = 1; break;
       case 'ArrowRight': case 'KeyD': input.right = 1; break;
-      case 'Space': case 'Enter': input.taps.push({ x: -1, y: -1 }); e.preventDefault(); break;
+      case 'ArrowUp': case 'KeyW': input.up = 1; e.preventDefault(); break;
+      case 'ArrowDown': case 'KeyS': input.down = 1; e.preventDefault(); break;
+      case 'Space': input.fireKey = 1; input.taps.push({ x: -1, y: -1 }); e.preventDefault(); break;
+      case 'Enter': input.taps.push({ x: -1, y: -1 }); e.preventDefault(); break;
       case 'KeyM': input.keys.push('mute'); break;
       case 'KeyP': case 'Escape': input.keys.push('pause'); break;
     }
   });
   addEventListener('keyup', e => {
-    if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = 0;
-    if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = 0;
+    switch (e.code) {
+      case 'ArrowLeft': case 'KeyA': input.left = 0; break;
+      case 'ArrowRight': case 'KeyD': input.right = 0; break;
+      case 'ArrowUp': case 'KeyW': input.up = 0; break;
+      case 'ArrowDown': case 'KeyS': input.down = 0; break;
+      case 'Space': input.fireKey = 0; break;
+    }
   });
 }

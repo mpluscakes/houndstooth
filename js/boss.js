@@ -1,5 +1,7 @@
 // The Moth Queen: a giant boss with a health bar and a cycle of attacks.
-import { view, drawGlow } from './gfx.js';
+// She lives in axis coordinates (u along the firing axis, v across it).
+import { drawGlow } from './gfx.js';
+import { F } from './field.js';
 import { Moth } from './enemies.js';
 import { audio } from './audio.js';
 import { fx } from './fx.js';
@@ -10,8 +12,9 @@ export class Queen {
   constructor(game, tier) {
     this.game = game;
     this.tier = tier;                       // 1 for the first Queen, 2 for the next...
-    this.maxHp = this.hp = 60 + tier * 45;
-    this.x = view.W / 2; this.y = -40;
+    this.maxHp = this.hp = 120 + tier * 90;
+    this.u = F.uFar + 50; this.v = this.lanes().mid;
+    this.place();
     this.hw = 26; this.hh = 15;             // hit box half-size
     this.state = 'enter';
     this.t = 0; this.sway = 0;
@@ -22,52 +25,65 @@ export class Queen {
     this.dead = false;
   }
 
-  get homeY() { return view.safeTop + 66; }
+  get homeU() { return F.uFar - 85; }
+  place() { this.x = F.x(this.u, this.v); this.y = F.y(this.u, this.v); }
+
+  // The lanes she can sway across while staying on screen and in reach.
+  lanes() {
+    const u = this.homeU;
+    const hi = (F.W - 26 - u * F.dx) / F.nx;
+    const lo = Math.max(F.reachL + 6, (28 - u * F.dx) / F.nx, (F.top + 32 - F.bottom - u * F.dy) / F.ny);
+    return { mid: (lo + hi) / 2, amp: Math.max(0, (hi - lo) / 2) };
+  }
   get enraged() { return this.hp < this.maxHp * 0.4; }
   get vulnerable() { return this.state !== 'enter' && this.state !== 'dying'; }
 
   update(dt) {
-    const g = this.game, W = view.W;
+    const g = this.game;
     this.t += dt; this.flash -= dt;
 
     switch (this.state) {
       case 'enter':
-        this.y += 45 * dt;
-        if (this.y >= this.homeY) { this.state = 'fight'; audio.sfx.queenCry(); fx.addShake(4); }
+        this.u -= 55 * dt;
+        if (this.u <= this.homeU) { this.state = 'fight'; audio.sfx.queenCry(); fx.addShake(4); }
         break;
 
       case 'fight':
         this.sway += dt * (this.enraged ? 1.15 : 0.8);
-        this.x = W / 2 + Math.sin(this.sway) * (W / 2 - 34);
-        this.y = this.homeY + Math.sin(this.t * 1.9) * 5;
+        const l = this.lanes();
+        this.v = l.mid + Math.sin(this.sway) * l.amp;
+        this.u = this.homeU + Math.sin(this.t * 1.9) * 5;
         if (this.fan2 > 0 && (this.fan2 -= dt) <= 0) this.fan();
         if (this.rain > 0) {
           this.rain -= dt; this.rainT -= dt;
           if (this.rainT <= 0) {
             this.rainT = 0.12;
-            g.enemyShot(this.x + Math.sin(this.t * 7) * 22, this.y + 16, Math.PI / 2 + Math.sin(this.t * 3) * 0.55, 72 + this.tier * 4);
+            const o = F.pt(this.u - 16, this.v + Math.sin(this.t * 7) * 22);
+            g.enemyShot(o.x, o.y, F.backAngle + Math.sin(this.t * 3) * 0.55, 72 + this.tier * 4);
           }
         } else if ((this.cd -= dt) <= 0 && g.player.alive) this.attack();
         break;
 
       case 'telegraph': // shudder before a swoop
         this.tt -= dt;
-        if (this.tt <= 0) { this.state = 'swoop'; this.sw = 0; this.swY = g.player.y - 4; audio.sfx.dive(); }
+        if (this.tt <= 0) { this.state = 'swoop'; this.sw = 0; this.swU = Math.max(18, F.u(g.player.x, g.player.y) + 4); audio.sfx.dive(); }
         break;
 
       case 'swoop': {
         this.sw += dt;
-        const home = this.homeY;
-        if (this.sw < 0.5) { const k = this.sw / 0.5; this.y = home + (this.swY - home) * k * k; }
-        else if (this.sw < 0.7) this.y = this.swY;
-        else if (this.sw < 1.7) { const k = this.sw - 0.7; this.y = this.swY + (home - this.swY) * (1 - (1 - k) * (1 - k)); }
+        // Charge down her lane to the player's depth, then climb back.
+        const home = this.homeU;
+        if (this.sw < 0.5) { const k = this.sw / 0.5; this.u = home + (this.swU - home) * k * k; }
+        else if (this.sw < 0.7) this.u = this.swU;
+        else if (this.sw < 1.7) { const k = this.sw - 0.7; this.u = this.swU + (home - this.swU) * (1 - (1 - k) * (1 - k)); }
         else { this.state = 'fight'; this.cd = 1; }
         break;
       }
 
       case 'dying':
         this.dieT -= dt;
-        this.y += 5 * dt;
+        this.u -= 5 * dt;
+        this.place();
         if (Math.random() < dt * 14) {
           const ex = this.x + (Math.random() - 0.5) * 56, ey = this.y + (Math.random() - 0.5) * 36;
           fx.burst(ex, ey, COLORS, 10, 80);
@@ -86,6 +102,7 @@ export class Queen {
         }
         break;
     }
+    this.place();
   }
 
   attack() {
@@ -100,10 +117,8 @@ export class Queen {
     } else if (kind === 'brood') {
       const n = Math.min(5, 2 + this.tier);
       for (let i = 0; i < n; i++) {
-        this.game.enemies.push(new Moth(this.game, {
-          type: 3, kamikaze: true,
-          x: this.x + (i - (n - 1) / 2) * 14, y: this.y + 10,
-        }));
+        const o = F.pt(this.u - 10, this.v + (i - (n - 1) / 2) * 14);
+        this.game.enemies.push(new Moth(this.game, { type: 3, kamikaze: true, x: o.x, y: o.y }));
       }
     } else {
       this.state = 'telegraph'; this.tt = 0.75;
@@ -114,9 +129,10 @@ export class Queen {
   fan() {
     const p = this.game.player;
     const n = 3 + Math.min(this.tier, 2) * 2;
-    const base = Math.atan2(p.y - this.y, p.x - this.x);
+    const o = F.pt(this.u - 14, this.v);
+    const base = Math.atan2(p.y - o.y, p.x - o.x);
     for (let i = 0; i < n; i++) {
-      this.game.enemyShot(this.x, this.y + 14, base + (i - (n - 1) / 2) * 0.27, 78 + this.tier * 5);
+      this.game.enemyShot(o.x, o.y, base + (i - (n - 1) / 2) * 0.27, 78 + this.tier * 5);
     }
     audio.sfx.hit();
   }
@@ -128,7 +144,7 @@ export class Queen {
     if (!this.droppedMid && this.hp <= this.maxHp / 2) {
       // Halfway there: she sheds a tooth for the player.
       this.droppedMid = true;
-      this.game.dropPickup(this.x, this.y + 10);
+      this.game.dropPickup(F.x(this.u - 10, this.v), F.y(this.u - 10, this.v));
       audio.sfx.queenCry();
     }
     if (this.hp <= 0) {
