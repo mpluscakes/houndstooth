@@ -16,7 +16,8 @@ export class Player {
   reset(count = 1) {
     F.layout();
     const start = F.pt(F.front * 0.42, F.reachR * 0.25);
-    this.scatterT = 0; this.scatterCd = 0;
+    this.spinT = 0; this.spinCd = 0;
+    this.spread = 0; input.spread = 0;
     this.x = start.x; this.y = start.y;
     this.alive = true;
     this.invuln = 0;
@@ -32,26 +33,30 @@ export class Player {
   get count() { return this.ships.length; }
   get full() { return this.ships.length >= CFG.MAX_SHIPS; }
 
-  get scattered() { return this.scatterT > 0; }
+  get spinning() { return this.spinT > 0; }
+  get spinReady() { return this.spinT <= 0 && this.spinCd <= 0; }
 
-  // Double tap: the formation bursts apart, wheels once around the leader and
-  // locks back together, opening gaps to slip a tight spray through.
-  scatter() {
-    if (!this.alive || this.scatterT > 0 || this.scatterCd > 0) return;
-    this.scatterT = CFG.SCATTER_TIME;
+  // Double tap: the formation flings apart, whirls around the leader and
+  // slams back together. Invulnerable and firing fast while it lasts.
+  spin() {
+    if (!this.alive || !this.spinReady) return;
+    this.spinT = CFG.SPIN_TIME;
+    this.invuln = Math.max(this.invuln, CFG.SPIN_TIME + CFG.SPIN_GRACE);
     audio.sfx.dive();
+    fx.blast(this.x, this.y, '#ffffff', 30, 0.3);
   }
 
   slotPos(i) {
     let ox = SLOTS[i][0] * CFG.TILE, oy = SLOTS[i][1] * CFG.TILE;
-    if (this.scatterT > 0) {
-      const k = 1 - this.scatterT / CFG.SCATTER_TIME;             // 0..1 through the move
-      const open = Math.min(1, k / 0.2, (1 - k) / 0.2);           // out, hold, back in
-      const sp = 1 + (CFG.SCATTER_SPREAD - 1) * open * (2 - open);
-      const a = Math.PI * 2 * k * k * (3 - 2 * k), c = Math.cos(a), sn = Math.sin(a);
-      [ox, oy] = [(ox * c - oy * sn) * sp, (ox * sn + oy * c) * sp];
+    let sp = 1 + (CFG.SPREAD_MAX - 1) * this.spread;   // second-thumb spacing
+    if (this.spinT > 0) {
+      const k = 1 - this.spinT / CFG.SPIN_TIME;                   // 0..1 through the move
+      const open = Math.min(1, k / 0.15, (1 - k) / 0.15);         // out, hold, back in
+      sp = Math.max(sp, 1 + (CFG.SPIN_SPREAD - 1) * open);
+      const a = Math.PI * 2 * CFG.SPIN_TURNS * k, c = Math.cos(a), sn = Math.sin(a);
+      [ox, oy] = [ox * c - oy * sn, ox * sn + oy * c];
     }
-    return { x: this.x + ox, y: this.y + oy };
+    return { x: this.x + ox * sp, y: this.y + oy * sp };
   }
 
   update(dt) {
@@ -59,12 +64,26 @@ export class Player {
     if (!this.alive) return;
     this.x += drag.x * CFG.DRAG_GAIN + (input.right - input.left) * CFG.KEY_SPEED * dt;
     this.y += drag.y * CFG.DRAG_GAIN + (input.down - input.up) * CFG.KEY_SPEED * dt;
-    this.confine();
-    this.scatterCd = Math.max(0, this.scatterCd - dt);
-    if (this.scatterT > 0 && (this.scatterT -= dt) <= 0) {
-      this.scatterT = 0; this.scatterCd = CFG.SCATTER_COOLDOWN;
-      if (this.count > 1) audio.sfx.lock();
+    // Spacing follows the second thumb (or Q / E) and clicks shut at zero.
+    input.spread = clamp(input.spread + (input.widen - input.tighten) * dt * 2, 0, 1);
+    const was = this.spread;
+    this.spread += (input.spread - this.spread) * Math.min(1, dt * 16);
+    if (input.spread === 0 && this.spread < 0.02) this.spread = 0;
+    if (was > 0 && this.spread === 0 && this.count > 1) {
+      audio.sfx.lock();
       for (const s of this.ships) if (s.locked) s.flash = 0.15;
+    }
+    this.confine();
+
+    this.spinCd = Math.max(0, this.spinCd - dt);
+    if (this.spinT > 0) {
+      for (const s of this.ships) fx.spark(s.x, s.y, 0, 0, 0.22, '#aaaaaa', 2);
+      if ((this.spinT -= dt) <= 0) {
+        this.spinT = 0; this.spinCd = CFG.SPIN_COOLDOWN;
+        audio.sfx.lock();
+        fx.addShake(3);
+        for (const s of this.ships) if (s.locked) { s.flash = 0.2; fx.burst(s.x, s.y, ['#ffffff', '#bbbbbb'], 6, 60, { life: 0.3, grav: 0 }); }
+      }
     }
 
     this.invuln = Math.max(0, this.invuln - dt);
@@ -88,11 +107,12 @@ export class Player {
     // prongs of each tooth; the lead fires every volley, wingmen every other.
     this.fireT = Math.max(0, this.fireT - dt);
     if (input.firing && this.fireT <= 0) {
-      this.fireT = CFG.FIRE_INTERVAL;
+      const spin = this.spinT > 0;
+      this.fireT = CFG.FIRE_INTERVAL / (spin ? CFG.SPIN_FIRE : 1);
       this.volley++;
       this.ships.forEach((s, i) => {
         if (!s.locked) return;
-        if (i !== 0 && (i + this.volley) % 2) return;
+        if (!spin && i !== 0 && (i + this.volley) % 2) return;
         const m = MUZZLES[(this.volley + (i >> 1)) % 2];
         this.game.bullets.push({ x: s.x + m[0], y: s.y + m[1] });
       });
@@ -110,6 +130,8 @@ export class Player {
       loX = Math.min(loX, sx); hiX = Math.max(hiX, sx); hiY = Math.max(hiY, sy);
       hiV = Math.max(hiV, (sx * F.nx + sy * F.ny) * T);
     }
+    const sp = 1 + (CFG.SPREAD_MAX - 1) * this.spread;
+    loX *= sp; hiX *= sp; hiY *= sp; hiV *= sp;
     const x0 = 8 - loX * T, x1 = F.W - 13 - hiX * T, y0 = F.top + 12, y1 = F.bottom - 10 - hiY * T;
     for (let i = 0; i < 4; i++) {
       this.x = clamp(this.x, x0, x1); this.y = clamp(this.y, y0, y1);
@@ -171,10 +193,11 @@ export class Player {
 
   draw(ctx, sprites, time) {
     if (!this.alive) return;
-    const blink = this.invuln > 0 && ((time * 14) | 0) % 2 === 0;
+    const blink = this.invuln > 0 && !this.spinning && ((time * 14) | 0) % 2 === 0;
     this.ships.forEach((s, i) => {
       const x = Math.round(s.x) - TOOTH_ORIGIN.x, y = Math.round(s.y) - TOOTH_ORIGIN.y;
       if (s.flash > 0) drawGlow(ctx, s.x, s.y, 16, '#ffffff', s.flash * 4);
+      if (this.spinning) drawGlow(ctx, s.x, s.y, 14, '#ffffff', 0.6);
       ctx.drawImage(blink ? sprites.toothGrey : sprites.tooth, x, y);
       if (i === 0) {
         // Cockpit light marks the lead ship.

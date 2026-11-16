@@ -9,8 +9,11 @@ right, and moths arrive from the top right and dive towards the bottom left.
 - **Drag** anywhere to move. The ship **fires while you are touching** the
   screen. The cloth corner at the bottom right is out of play: rest your
   thumb there.
-- **Double tap** to scatter: the formation bursts apart, wheels around the
-  leader and regroups, opening gaps to weave through a tight spray.
+- **Double tap** to spin: the formation whirls around its leader for a
+  moment, invulnerable, firing fast and shredding any moth it touches. Then
+  it needs a few seconds to recharge (meter in the bottom-right corner).
+- **Second thumb**: drag up to loosen the formation, down to tighten it. It
+  clicks back into the locked houndstooth at the bottom of its travel.
 - **Shoot the glowing moth**, then **catch the tooth** it drops to add a ship.
   Ships lock together into a houndstooth tiling, and every ship fires.
 - **Your formation is your health.** Each hit chews one ship away; lose the
@@ -18,7 +21,7 @@ right, and moths arrive from the top right and dive towards the bottom left.
 - Three waves per level, and a **Moth Queen** every fourth level.
 
 Desktop: arrow keys / WASD to move, hold Space (or the mouse button) to fire,
-Shift or X to scatter,
+Shift or X to spin, E / Q to loosen / tighten the formation,
 M to mute, P to pause.
 
 ## Run locally

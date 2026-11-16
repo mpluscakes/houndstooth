@@ -3,6 +3,7 @@
 // screen is touched. Taps are queued for menus/buttons.
 import { view } from './gfx.js';
 import { audio } from './audio.js';
+import { CFG } from './config.js';
 
 export const input = {
   left: 0, right: 0, up: 0, down: 0,
@@ -10,6 +11,8 @@ export const input = {
   fireKey: 0,        // Space is down
   taps: [],          // [{x, y}] in logical pixels (x = -1 for keyboard "tap")
   keys: [],          // one-shot presses: 'mute', 'pause', 'scatter' (double tap)
+  spread: 0,         // formation spacing set by a second finger, 0 (locked) .. 1
+  widen: 0, tighten: 0, _id2: null, _y2: 0,
   _tapT: 0, _tapX: 0, _tapY: 0,
   _dx: 0, _dy: 0, _id: null, _lastX: 0, _lastY: 0, _wantFullscreen: true,
 
@@ -39,8 +42,12 @@ export function initInput() {
   const target = window;
   target.addEventListener('pointerdown', e => {
     audio.unlock();
-    if (input._id !== null) return;
     const p = toLogical(e);
+    if (input._id !== null) {
+      // A second finger doesn't steer: it sets the spacing between ships.
+      if (input._id2 === null && e.pointerId !== input._id) { input._id2 = e.pointerId; input._y2 = p.y; }
+      return;
+    }
     input._id = e.pointerId;
     input.held = true;
     input._lastX = p.x; input._lastY = p.y;
@@ -53,8 +60,13 @@ export function initInput() {
   }, { passive: false });
 
   target.addEventListener('pointermove', e => {
-    if (e.pointerId !== input._id) return;
     const p = toLogical(e);
+    if (e.pointerId === input._id2) {
+      input.spread = Math.max(0, Math.min(1, input.spread + (input._y2 - p.y) / CFG.SPREAD_DRAG));
+      input._y2 = p.y;
+      return;
+    }
+    if (e.pointerId !== input._id) return;
     input._dx += p.x - input._lastX; input._dy += p.y - input._lastY;
     input._lastX = p.x; input._lastY = p.y;
   });
@@ -62,12 +74,13 @@ export function initInput() {
   const end = e => {
     audio.unlock();
     if (e.pointerId === input._id) { input._id = null; input.held = false; }
+    if (e.pointerId === input._id2) { input._id2 = null; if (input.spread < 0.15) input.spread = 0; } // snap shut
     if (e.type === 'pointerup') tryFullscreen(e);
   };
   target.addEventListener('pointerup', end);
   target.addEventListener('pointercancel', end);
   target.addEventListener('blur', () => {
-    input._id = null; input.held = false; input.fireKey = 0;
+    input._id = input._id2 = null; input.held = false; input.fireKey = 0; input.widen = input.tighten = 0;
     input.left = input.right = input.up = input.down = 0;
   });
   // iOS only treats some events as "user gestures" for audio; cover them all.
@@ -87,6 +100,8 @@ export function initInput() {
       case 'Space': input.fireKey = 1; input.taps.push({ x: -1, y: -1 }); e.preventDefault(); break;
       case 'Enter': input.taps.push({ x: -1, y: -1 }); e.preventDefault(); break;
       case 'KeyM': input.keys.push('mute'); break;
+      case 'KeyE': input.widen = 1; break;
+      case 'KeyQ': input.tighten = 1; break;
       case 'ShiftLeft': case 'ShiftRight': case 'KeyX': input.keys.push('scatter'); break;
       case 'KeyP': case 'Escape': input.keys.push('pause'); break;
     }
@@ -98,6 +113,8 @@ export function initInput() {
       case 'ArrowUp': case 'KeyW': input.up = 0; break;
       case 'ArrowDown': case 'KeyS': input.down = 0; break;
       case 'Space': input.fireKey = 0; break;
+      case 'KeyE': input.widen = 0; break;
+      case 'KeyQ': input.tighten = 0; break;
     }
   });
 }

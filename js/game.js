@@ -236,7 +236,7 @@ export class Game {
     for (const k of input.keys.splice(0)) {
       if (k === 'mute') audio.toggleMute();
       if (k === 'pause' && this.state === 'playing') this.setPaused(!this.paused);
-      if (k === 'scatter' && this.state === 'playing' && !this.paused) this.player.scatter();
+      if (k === 'scatter' && this.state === 'playing' && !this.paused) this.player.spin();
     }
     for (const tap of input.taps.splice(0)) {
       if (tap.x > view.W - 26 && tap.y >= 0 && tap.y < view.safeTop + 26) { audio.toggleMute(); continue; }
@@ -343,8 +343,11 @@ export class Game {
     }
 
     // Things that hurt.
+    // A spinning formation shreds any moth it touches.
+    if (p.spinning) for (const s of p.ships) for (const e of this.enemies) {
+      if (e.active && !e.dead && near(s, e, 11, 10)) this.killMoth(e);
+    }
     if (p.invuln > 0) return;
-    const box = p.scattered ? CFG.SCATTER_HITBOX : 5.5;
     for (let i = 0; i < p.ships.length; i++) {
       const s = p.ships[i];
       let hurt = false;
@@ -352,7 +355,7 @@ export class Game {
         if (e.active && !e.dead && near(s, e, 10, 9)) { this.killMoth(e); hurt = true; break; }
       }
       if (!hurt) for (const b of this.ebullets) {
-        if (!b.dead && near(s, b, box, box)) { b.dead = true; hurt = true; break; }
+        if (!b.dead && near(s, b, 5.5, 5.5)) { b.dead = true; hurt = true; break; }
       }
       if (!hurt && boss && boss.vulnerable && near(s, boss, boss.hw + 3, boss.hh + 4)) hurt = true;
       if (hurt) {
@@ -470,8 +473,15 @@ export class Game {
     ctx.restore();
     ctx.fillStyle = '#444';
     for (let y = Math.ceil(yTop); y < H; y++) ctx.fillRect(Math.round(x0 + (F.bottom - y) / slope), y, 1, 1);
+    // Spin meter, tucked into the corner.
+    const p = this.player, bw = 26, bx = W - 4 - bw, by = F.bottom - 8;
+    const ready = p.spinReady, fill = p.spinning ? 0 : Math.round(bw * (1 - p.spinCd / CFG.SPIN_COOLDOWN));
+    drawText(ctx, 'SPIN', W - 4, by - 8, { align: 'right', color: ready ? (((this.time * 3) | 0) % 2 ? '#fff' : '#ffe95a') : '#666', shadow: '#000' });
+    ctx.fillStyle = '#000'; ctx.fillRect(bx - 1, by - 1, bw + 2, 5);
+    ctx.fillStyle = '#333'; ctx.fillRect(bx, by, bw, 3);
+    ctx.fillStyle = ready ? '#ffe95a' : '#999'; ctx.fillRect(bx, by, fill, 3);
     if (this.state === 'playing' && !this.paused && !input.firing && ((this.time * 2.5) | 0) % 2) {
-      drawText(ctx, 'HOLD TO FIRE', W - 4, F.bottom - 10, { align: 'right', shadow: '#000' });
+      drawText(ctx, 'HOLD TO FIRE', x0 / 2, F.bottom - 12, { align: 'center', shadow: '#000' });
     }
   }
 
@@ -519,7 +529,7 @@ export class Game {
     drawText(ctx, 'DRAG TO MOVE - HOLD TO FIRE', W / 2, by + 20, { align: 'center', color: '#aaa' });
     drawText(ctx, 'SHOOT THE GLOWING MOTH', W / 2, by + 30, { align: 'center', color: '#ffe95a' });
     drawText(ctx, 'CATCH THE TOOTH TO GROW', W / 2, by + 38, { align: 'center', color: '#ffe95a' });
-    drawText(ctx, 'DOUBLE TAP TO SCATTER', W / 2, by + 48, { align: 'center', color: '#aaa' });
+    drawText(ctx, 'DOUBLE TAP TO SPIN', W / 2, by + 48, { align: 'center', color: '#aaa' });
     if (this.hi > 0) drawText(ctx, 'HIGH SCORE ' + this.hi, W / 2, H - 14 - view.safeBottom, { align: 'center', color: '#fff', shadow: '#000' });
   }
 

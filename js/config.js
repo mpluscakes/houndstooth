@@ -14,13 +14,20 @@ export const CFG = {
   // Player / formation
   TILE: 16,               // houndstooth repeat, in logical px (8 cells of 2px)
   MAX_SHIPS: 8,
-  FIRE_INTERVAL: 0.11,    // seconds between volleys (only while touching)
+  FIRE_INTERVAL: 0.095,   // seconds between volleys (only while touching)
   BULLET_SPEED: 330,
   INVULN_TIME: 1.3,       // seconds of blinking after a hit
-  SCATTER_TIME: 1.1,      // double tap: formation spreads, spins and regroups
-  SCATTER_COOLDOWN: 1.2,  // seconds after regrouping before it can go again
-  SCATTER_SPREAD: 2.6,    // how far apart the ships get (1 = locked together)
-  SCATTER_HITBOX: 3.5,    // shots must get this close to a scattered ship (5.5 normally)
+  // Double tap: the spin, a timed special. The formation whirls around the
+  // leader, invulnerable, firing fast and shredding any moth it touches.
+  SPIN_TIME: 0.65,
+  SPIN_TURNS: 2,
+  SPIN_SPREAD: 2.0,       // how far apart the ships fling (1 = locked together)
+  SPIN_FIRE: 2.5,         // fire-rate multiplier during the spin
+  SPIN_GRACE: 0.2,        // extra invulnerable time after regrouping
+  SPIN_COOLDOWN: 4,       // seconds before it can be used again
+  // Second thumb: drag up / down to loosen or tighten the formation.
+  SPREAD_MAX: 2.2,        // widest spacing (1 = locked together)
+  SPREAD_DRAG: 70,        // px of second-thumb travel from locked to widest
   DRAG_GAIN: 1.3,         // ship px moved per px of thumb drag
   KEY_SPEED: 150,
 
@@ -42,11 +49,11 @@ export const CFG = {
 
 // Formation slots, in houndstooth-tile units (x right, y down) relative to
 // the lead ship. Ships fill these in order. Chosen for the firing angle so
-// the formation is a wedge behind the leader with every ship in its own lane.
+// the formation stays one solid block of cloth behind the leader at every
+// size (2x2 at four ships), with every ship in its own lane.
 export const SLOTS = [
-  [0, 0], [-1, 0], [0, 1],
-  [1, 1], [-1, 1], [-2, 0],
-  [1, 2], [-2, 1],
+  [0, 0], [-1, 0], [0, 1], [-1, 1],
+  [1, 1], [-2, 0], [-2, 1], [0, 2],
 ];
 
 // Where shots leave a ship, relative to its centre: the tips of the tooth's
