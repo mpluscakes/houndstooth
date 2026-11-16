@@ -14,7 +14,8 @@ export const F = {
   nx: Math.sin(a), ny: Math.cos(a),    // unit vector across the lanes
   backAngle: Math.atan2(Math.sin(a), -Math.cos(a)), // screen angle moths travel at
 
-  W: 180, top: 0, bottom: 300, dead: 0,
+  W: 180, top: 0, bottom: 300,
+  thumbV: 0,     // lanes beyond this are the thumb corner (bottom right)
   uFar: 300,     // u of the far (top-right) corner
   front: 100,    // the player may not advance past this u
   reachL: 0,     // left-most lane the player can get into
@@ -24,13 +25,13 @@ export const F = {
   layout() {
     const { W, H } = view;
     this.W = W;
-    this.dead = Math.max(CFG.THUMB_MIN, Math.round(H * CFG.THUMB_FRAC)) + view.safeBottom;
-    this.bottom = H - this.dead;
+    this.bottom = H - view.safeBottom;
     this.top = view.safeTop + CFG.HUD_H;
     this.uFar = this.u(W, this.top);
     this.front = this.uFar * CFG.FRONT;
     this.reachL = (10 - this.front * this.dx) / this.nx;
-    this.reachR = (W - 14) * this.nx;
+    this.thumbV = W * (1 - CFG.THUMB_W) * this.nx;
+    this.reachR = this.thumbV - 12;
   },
 
   x(u, v) { return u * this.dx + v * this.nx; },
@@ -46,6 +47,6 @@ export const F = {
 
   // Is the point outside the playfield by more than m pixels?
   outside(x, y, m = 8) {
-    return x < -m || x > this.W + m || y < this.top - m || y > this.bottom + m;
+    return x < -m || x > this.W + m || y < this.top - m || y > this.bottom + m || this.v(x, y) > this.thumbV + m;
   },
 };

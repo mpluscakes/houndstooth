@@ -177,7 +177,7 @@ export class Game {
   // lanes the player can actually reach.
   setGrid(cols, rows) {
     const span = (CFG.GRID_COLS - 1) * CFG.GRID_DV, sway = CFG.GRID_SWAY;
-    const vL = F.reachL + sway + 2;
+    const vL = F.reachL + sway + 16;
     this.grid = {
       cols, rows,
       vMid: vL + span / 2,
@@ -236,6 +236,7 @@ export class Game {
     for (const k of input.keys.splice(0)) {
       if (k === 'mute') audio.toggleMute();
       if (k === 'pause' && this.state === 'playing') this.setPaused(!this.paused);
+      if (k === 'scatter' && this.state === 'playing' && !this.paused) this.player.scatter();
     }
     for (const tap of input.taps.splice(0)) {
       if (tap.x > view.W - 26 && tap.y >= 0 && tap.y < view.safeTop + 26) { audio.toggleMute(); continue; }
@@ -343,6 +344,7 @@ export class Game {
 
     // Things that hurt.
     if (p.invuln > 0) return;
+    const box = p.scattered ? CFG.SCATTER_HITBOX : 5.5;
     for (let i = 0; i < p.ships.length; i++) {
       const s = p.ships[i];
       let hurt = false;
@@ -350,7 +352,7 @@ export class Game {
         if (e.active && !e.dead && near(s, e, 10, 9)) { this.killMoth(e); hurt = true; break; }
       }
       if (!hurt) for (const b of this.ebullets) {
-        if (!b.dead && near(s, b, 5.5, 5.5)) { b.dead = true; hurt = true; break; }
+        if (!b.dead && near(s, b, box, box)) { b.dead = true; hurt = true; break; }
       }
       if (!hurt && boss && boss.vulnerable && near(s, boss, boss.hw + 3, boss.hh + 4)) hurt = true;
       if (hurt) {
@@ -454,20 +456,22 @@ export class Game {
     }
   }
 
-  // The strip at the bottom is kept clear of the action so a thumb resting
-  // there never hides anything. It is upholstered, naturally.
+  // The bottom-right corner, sliced off along the firing axis, is out of
+  // play: a natural place for a right thumb. It is upholstered, naturally.
   drawThumbZone(ctx) {
-    const { W, H } = view, y = F.bottom;
+    const { W, H } = view, x0 = F.thumbV / F.nx, slope = -F.dy / F.dx;
+    const yTop = F.bottom - (W - x0) * slope;
     ctx.save();
-    ctx.beginPath(); ctx.rect(0, y, W, H - y); ctx.clip();
-    ctx.fillStyle = '#000'; ctx.fillRect(0, y, W, H - y);
+    ctx.beginPath();
+    ctx.moveTo(x0 - (H - F.bottom) / slope, H); ctx.lineTo(W, yTop); ctx.lineTo(W, H);
+    ctx.closePath(); ctx.clip();
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
     this.drawCloth(ctx, 0.75);
     ctx.restore();
-    ctx.fillStyle = '#444'; ctx.fillRect(0, y, W, 1);
+    ctx.fillStyle = '#444';
+    for (let y = Math.ceil(yTop); y < H; y++) ctx.fillRect(Math.round(x0 + (F.bottom - y) / slope), y, 1, 1);
     if (this.state === 'playing' && !this.paused && !input.firing && ((this.time * 2.5) | 0) % 2) {
-      const ty = Math.round(y + (F.dead - view.safeBottom) / 2 - 3);
-      ctx.fillStyle = '#000'; ctx.fillRect(W / 2 - 34, ty - 4, 68, 13);
-      drawText(ctx, 'HOLD TO FIRE', W / 2, ty, { align: 'center' });
+      drawText(ctx, 'HOLD TO FIRE', W - 4, F.bottom - 10, { align: 'right', shadow: '#000' });
     }
   }
 
@@ -510,11 +514,12 @@ export class Game {
     ctx.fillStyle = '#ff3b3b'; ctx.fillRect(sx - 1, sy - 1, 2, 2);
 
     const by = Math.round(H * 0.68);
-    ctx.fillStyle = '#000'; ctx.fillRect(0, by - 8, W, 62);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, by - 8, W, 66);
     if (((t * 2.5) | 0) % 2) drawText(ctx, 'TAP TO START', W / 2, by, { scale: 2, align: 'center' });
     drawText(ctx, 'DRAG TO MOVE - HOLD TO FIRE', W / 2, by + 20, { align: 'center', color: '#aaa' });
     drawText(ctx, 'SHOOT THE GLOWING MOTH', W / 2, by + 30, { align: 'center', color: '#ffe95a' });
     drawText(ctx, 'CATCH THE TOOTH TO GROW', W / 2, by + 38, { align: 'center', color: '#ffe95a' });
+    drawText(ctx, 'DOUBLE TAP TO SCATTER', W / 2, by + 48, { align: 'center', color: '#aaa' });
     if (this.hi > 0) drawText(ctx, 'HIGH SCORE ' + this.hi, W / 2, H - 14 - view.safeBottom, { align: 'center', color: '#fff', shadow: '#000' });
   }
 

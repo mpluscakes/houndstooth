@@ -6,9 +6,9 @@ export const CFG = {
   // The tilted field (see field.js)
   AIM_DEG: 63.435,        // firing angle above horizontal. atan(2): shots step
                           // 1px across per 2px up, a clean pixel diagonal
-  FRONT: 0.33,            // how far up the axis the player may advance (0..1)
-  THUMB_FRAC: 0.17,       // share of the screen kept empty for your thumb...
-  THUMB_MIN: 56,          // ...and its minimum height in logical px
+  FRONT: 0.42,            // how far up the axis the player may advance (0..1)
+  THUMB_W: 0.36,          // width (share of the screen) of the bottom-right
+                          // corner cut off along the firing axis for a thumb
   HUD_H: 20,
 
   // Player / formation
@@ -17,6 +17,10 @@ export const CFG = {
   FIRE_INTERVAL: 0.11,    // seconds between volleys (only while touching)
   BULLET_SPEED: 330,
   INVULN_TIME: 1.3,       // seconds of blinking after a hit
+  SCATTER_TIME: 1.1,      // double tap: formation spreads, spins and regroups
+  SCATTER_COOLDOWN: 1.2,  // seconds after regrouping before it can go again
+  SCATTER_SPREAD: 2.6,    // how far apart the ships get (1 = locked together)
+  SCATTER_HITBOX: 3.5,    // shots must get this close to a scattered ship (5.5 normally)
   DRAG_GAIN: 1.3,         // ship px moved per px of thumb drag
   KEY_SPEED: 150,
 

@@ -6,9 +6,11 @@ Web Audio, no build step, no dependencies, no asset files.
 The whole playfield is tilted to match the tooth: ships fire up and to the
 right, and moths arrive from the top right and dive towards the bottom left.
 
-- **Drag** anywhere to move (sideways, and a limited way forward). The ship
-  **fires while you are touching** the screen. The cloth strip at the bottom
-  is empty on purpose: rest your thumb there.
+- **Drag** anywhere to move. The ship **fires while you are touching** the
+  screen. The cloth corner at the bottom right is out of play: rest your
+  thumb there.
+- **Double tap** to scatter: the formation bursts apart, wheels around the
+  leader and regroups, opening gaps to weave through a tight spray.
 - **Shoot the glowing moth**, then **catch the tooth** it drops to add a ship.
   Ships lock together into a houndstooth tiling, and every ship fires.
 - **Your formation is your health.** Each hit chews one ship away; lose the
@@ -16,6 +18,7 @@ right, and moths arrive from the top right and dive towards the bottom left.
 - Three waves per level, and a **Moth Queen** every fourth level.
 
 Desktop: arrow keys / WASD to move, hold Space (or the mouse button) to fire,
+Shift or X to scatter,
 M to mute, P to pause.
 
 ## Run locally

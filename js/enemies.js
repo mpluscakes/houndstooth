@@ -47,8 +47,8 @@ export class Moth {
     const side = v < g.grid.vMid ? -1 : 1; // peel away outwards first
     this.d = [
       { x: this.x, y: this.y },
-      F.pt(u + 26, v + side * 40),
-      F.pt(pu + 95, pv + side * 62),
+      F.pt(u + 26, clamp(v + side * 40, F.reachL, F.reachR)),
+      F.pt(pu + 95, clamp(pv + side * 62, F.reachL, F.reachR)), // stay in lanes the player can cover
       F.pt(-45, pv + (Math.random() - 0.5) * 36), // off the bottom-left
     ];
     this.diveDur = 2.2 / (g.diff.speed * this.def.diveSpeed);

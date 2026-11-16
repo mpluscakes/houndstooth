@@ -57,7 +57,7 @@ export class Queen {
         if (this.rain > 0) {
           this.rain -= dt; this.rainT -= dt;
           if (this.rainT <= 0) {
-            this.rainT = 0.12;
+            this.rainT = 0.15;
             const o = F.pt(this.u - 16, this.v + Math.sin(this.t * 7) * 22);
             g.enemyShot(o.x, o.y, F.backAngle + Math.sin(this.t * 3) * 0.55, 72 + this.tier * 4);
           }

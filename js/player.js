@@ -15,7 +15,8 @@ export class Player {
 
   reset(count = 1) {
     F.layout();
-    const start = F.pt(F.front * 0.55, F.reachR * 0.22);
+    const start = F.pt(F.front * 0.42, F.reachR * 0.25);
+    this.scatterT = 0; this.scatterCd = 0;
     this.x = start.x; this.y = start.y;
     this.alive = true;
     this.invuln = 0;
@@ -31,8 +32,26 @@ export class Player {
   get count() { return this.ships.length; }
   get full() { return this.ships.length >= CFG.MAX_SHIPS; }
 
+  get scattered() { return this.scatterT > 0; }
+
+  // Double tap: the formation bursts apart, wheels once around the leader and
+  // locks back together, opening gaps to slip a tight spray through.
+  scatter() {
+    if (!this.alive || this.scatterT > 0 || this.scatterCd > 0) return;
+    this.scatterT = CFG.SCATTER_TIME;
+    audio.sfx.dive();
+  }
+
   slotPos(i) {
-    return { x: this.x + SLOTS[i][0] * CFG.TILE, y: this.y + SLOTS[i][1] * CFG.TILE };
+    let ox = SLOTS[i][0] * CFG.TILE, oy = SLOTS[i][1] * CFG.TILE;
+    if (this.scatterT > 0) {
+      const k = 1 - this.scatterT / CFG.SCATTER_TIME;             // 0..1 through the move
+      const open = Math.min(1, k / 0.2, (1 - k) / 0.2);           // out, hold, back in
+      const sp = 1 + (CFG.SCATTER_SPREAD - 1) * open * (2 - open);
+      const a = Math.PI * 2 * k * k * (3 - 2 * k), c = Math.cos(a), sn = Math.sin(a);
+      [ox, oy] = [(ox * c - oy * sn) * sp, (ox * sn + oy * c) * sp];
+    }
+    return { x: this.x + ox, y: this.y + oy };
   }
 
   update(dt) {
@@ -41,6 +60,12 @@ export class Player {
     this.x += drag.x * CFG.DRAG_GAIN + (input.right - input.left) * CFG.KEY_SPEED * dt;
     this.y += drag.y * CFG.DRAG_GAIN + (input.down - input.up) * CFG.KEY_SPEED * dt;
     this.confine();
+    this.scatterCd = Math.max(0, this.scatterCd - dt);
+    if (this.scatterT > 0 && (this.scatterT -= dt) <= 0) {
+      this.scatterT = 0; this.scatterCd = CFG.SCATTER_COOLDOWN;
+      if (this.count > 1) audio.sfx.lock();
+      for (const s of this.ships) if (s.locked) s.flash = 0.15;
+    }
 
     this.invuln = Math.max(0, this.invuln - dt);
 
@@ -78,18 +103,21 @@ export class Player {
   // Keep the whole formation on the playfield, and the leader behind the
   // front line (a diagonal across the field, square to the firing axis).
   confine() {
-    let loX = 0, hiX = 0, hiY = 0;
+    let loX = 0, hiX = 0, hiY = 0, hiV = 0;
+    const T = CFG.TILE;
     for (const s of this.ships) {
       const [sx, sy] = SLOTS[s.slot];
       loX = Math.min(loX, sx); hiX = Math.max(hiX, sx); hiY = Math.max(hiY, sy);
+      hiV = Math.max(hiV, (sx * F.nx + sy * F.ny) * T);
     }
-    const T = CFG.TILE;
     const x0 = 8 - loX * T, x1 = F.W - 13 - hiX * T, y0 = F.top + 12, y1 = F.bottom - 10 - hiY * T;
     for (let i = 0; i < 4; i++) {
       this.x = clamp(this.x, x0, x1); this.y = clamp(this.y, y0, y1);
-      const over = F.u(this.x, this.y) - F.front;
-      if (over <= 0) break;
-      this.x -= over * F.dx; this.y -= over * F.dy;
+      const over = F.u(this.x, this.y) - F.front;          // past the front line
+      const wide = F.v(this.x, this.y) - (F.reachR - hiV);  // into the thumb corner
+      if (over <= 0 && wide <= 0) break;
+      if (over > 0) { this.x -= over * F.dx; this.y -= over * F.dy; }
+      if (wide > 0) { this.x -= wide * F.nx; this.y -= wide * F.ny; }
     }
     this.x = clamp(this.x, x0, x1); this.y = clamp(this.y, y0, y1);
   }

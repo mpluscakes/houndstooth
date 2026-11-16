@@ -30,25 +30,28 @@ const REPEAT_FROM = 6;
 // the moth's grid slot. Points are built with F.pt(u, v): u along the firing
 // axis (0 = the player's corner, F.uFar = the far corner), v across it.
 // `m` = { col, row, cols, index, side, sideIndex, vMid }.
+// Every path stays inside the lanes the player can reach (F.reachL..reachR),
+// so nothing loiters where it can't be shot.
+const lane = v => Math.max(F.reachL - 12, Math.min(F.reachR, v));
 const ENTRANCES = [
   // Pincer: each half streams in over the far corner, swings wide and
   // crosses in front of the player before climbing to its slot.
   function pincer(m) {
     const s = m.side;
     return {
-      p0: F.pt(F.uFar + 26, m.vMid + s * 45),
-      c1: F.pt(F.front + 45, m.vMid + s * 150),
-      c2: F.pt(F.front + 30, m.vMid - s * 80),
+      p0: F.pt(F.uFar + 26, m.vMid + s * 40),
+      c1: F.pt(F.front + 30, lane(m.vMid + s * 120)),
+      c2: F.pt(F.front + 25, lane(m.vMid - s * 70)),
       delay: m.sideIndex * 0.09,
     };
   },
-  // Sides: rows alternate sweeping in across the lanes from either flank.
-  function sides(m) {
+  // Weave: rows alternate snaking down one side and back up the other.
+  function weave(m) {
     const s = m.row % 2 ? 1 : -1;
     return {
-      p0: F.pt((F.front + F.uFar) / 2, m.vMid + s * (F.W * 0.9 + 30)),
-      c1: F.pt(F.front + 35, m.vMid + s * 20),
-      c2: F.pt(F.front + 110, m.vMid - s * 115),
+      p0: F.pt(F.uFar + 26, m.vMid + s * 30),
+      c1: F.pt(F.front + 10, lane(m.vMid + s * 75)),
+      c2: F.pt(F.front + 70, lane(m.vMid - s * 80)),
       delay: m.row * 0.45 + (s < 0 ? m.col : m.cols - 1 - m.col) * 0.08,
     };
   },
@@ -57,8 +60,8 @@ const ENTRANCES = [
     const s = m.side;
     return {
       p0: F.pt(F.uFar + 26, F.v(F.W, F.top)),
-      c1: F.pt(F.uFar - 90, m.vMid + s * 135),
-      c2: F.pt(F.front + 45, m.vMid + s * 85),
+      c1: F.pt(F.uFar - 90, lane(m.vMid + s * 80)),
+      c2: F.pt(F.front + 40, lane(m.vMid + s * 60)),
       delay: m.index * 0.055,
     };
   },

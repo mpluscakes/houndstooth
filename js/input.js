@@ -9,7 +9,8 @@ export const input = {
   held: false,       // a finger / mouse button is down
   fireKey: 0,        // Space is down
   taps: [],          // [{x, y}] in logical pixels (x = -1 for keyboard "tap")
-  keys: [],          // one-shot key presses: 'mute', 'pause'
+  keys: [],          // one-shot presses: 'mute', 'pause', 'scatter' (double tap)
+  _tapT: 0, _tapX: 0, _tapY: 0,
   _dx: 0, _dy: 0, _id: null, _lastX: 0, _lastY: 0, _wantFullscreen: true,
 
   get firing() { return this.held || !!this.fireKey; },
@@ -44,6 +45,10 @@ export function initInput() {
     input.held = true;
     input._lastX = p.x; input._lastY = p.y;
     input.taps.push(p);
+    const now = performance.now();
+    if (now - input._tapT < 300 && Math.abs(p.x - input._tapX) + Math.abs(p.y - input._tapY) < 40) {
+      input.keys.push('scatter'); input._tapT = 0;
+    } else { input._tapT = now; input._tapX = p.x; input._tapY = p.y; }
     e.preventDefault();
   }, { passive: false });
 
@@ -82,6 +87,7 @@ export function initInput() {
       case 'Space': input.fireKey = 1; input.taps.push({ x: -1, y: -1 }); e.preventDefault(); break;
       case 'Enter': input.taps.push({ x: -1, y: -1 }); e.preventDefault(); break;
       case 'KeyM': input.keys.push('mute'); break;
+      case 'ShiftLeft': case 'ShiftRight': case 'KeyX': input.keys.push('scatter'); break;
       case 'KeyP': case 'Escape': input.keys.push('pause'); break;
     }
   });
